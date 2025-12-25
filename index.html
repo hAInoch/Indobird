@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>INDO BIRD - Retro Game</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #70c5ce;
+            font-family: 'Press Start 2P', cursive;
+            touch-action: manipulation;
+        }
+        canvas { display: block; }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            pointer-events: none;
+            z-index: 10;
+        }
+        /* De score zelf: wit, geen border */
+        #score { 
+            font-size: 40px; 
+            margin: 0;
+        }
+        /* High Score: fel geel, geen border, hoofdletters */
+        #highScore { 
+            font-size: 16px; 
+            margin: 10px 0 0 0; 
+            color: #ffcc00; 
+        }
+
+        #startScreen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(112, 197, 206, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        h1 { 
+            font-size: 36px; 
+            color: #ffcc00; 
+            -webkit-text-stroke: 2px #5d4037;
+            margin-bottom: 15px;
+        }
+        /* Normaal, goed leesbaar lettertype voor de subtitel */
+        p.subtitle { 
+            font-family: Arial, sans-serif;
+            font-size: 18px; 
+            font-weight: bold;
+            color: #333; 
+            margin-bottom: 40px;
+            max-width: 80%;
+        }
+        #startBtn {
+            padding: 20px 30px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 14px;
+            background-color: #ff5722;
+            color: white;
+            border: 4px solid black;
+            cursor: pointer;
+            box-shadow: 6px 6px 0px #5d4037;
+            pointer-events: auto;
+        }
+        #startBtn:active {
+            transform: translate(3px, 3px);
+            box-shadow: 3px 3px 0px #5d4037;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <p id="score">0</p>
+        <p id="highScore">HIGH SCORE: 0</p>
+    </div>
+
+    <div id="startScreen">
+        <h1>INDO BIRD</h1>
+        <p class="subtitle">Vermijd de lempers, hoe lekker ze ook zijn!</p>
+        <button id="startBtn">Adoeh, begin met vliegen</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+const highScoreElement = document.getElementById('highScore');
+const startScreen = document.getElementById('startScreen');
+const startBtn = document.getElementById('startBtn');
+
+let bird = { x: 50, y: 0, width: 44, height: 34, gravity: 0.5, lift: -9, velocity: 0 };
+let pipes = [];
+let frame = 0;
+let score = 0;
+let highScore = localStorage.getItem('flappyHighScoreIndo') || 0;
+let gameSpeed = 3.5;
+let isGameOver = false;
+let gameStarted = false;
+
+const birdImg = new Image(); birdImg.src = 'flappy.png'; 
+const lemperKort = new Image(); lemperKort.src = 'lemperkort.png';
+const lemperMed = new Image(); lemperMed.src = 'lempermedium.png';
+const lemperLang = new Image(); lemperLang.src = 'lemperlang.png';
+
+highScoreElement.innerText = `HIGH SCORE: ${highScore}`;
+
+function getLemperAsset(height) {
+    if (height < 160) return lemperKort;
+    if (height < 320) return lemperMed;
+    return lemperLang;
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    bird.x = canvas.width / 4;
+    bird.y = canvas.height / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function flap() {
+    if (!gameStarted) return;
+    if (isGameOver) resetGame();
+    else bird.velocity = bird.lift;
+}
+
+startBtn.addEventListener('click', () => {
+    startScreen.style.display = 'none';
+    gameStarted = true;
+    resetGame();
+});
+
+window.addEventListener('keydown', (e) => { if (e.code === 'Space') flap(); });
+window.addEventListener('touchstart', (e) => { 
+    if(gameStarted) { e.preventDefault(); flap(); }
+}, { passive: false });
+
+function resetGame() {
+    bird.y = canvas.height / 2;
+    bird.velocity = 0;
+    pipes = [];
+    score = 0;
+    frame = 0;
+    isGameOver = false;
+    scoreElement.innerText = score;
+    loop();
+}
+
+function createPipe() {
+    const gap = 190;
+    const minH = 60;
+    const pipeW = 75;
+    const range = canvas.height - gap - (minH * 2);
+    const topH = Math.floor(Math.random() * range) + minH;
+    const botH = canvas.height - (topH + gap);
+
+    pipes.push({
+        x: canvas.width,
+        width: pipeW,
+        top: topH,
+        bottom: botH,
+        topImg: getLemperAsset(topH),
+        botImg: getLemperAsset(botH),
+        passed: false
+    });
+}
+
+function update() {
+    if (isGameOver || !gameStarted) return;
+
+    bird.velocity += bird.gravity;
+    bird.y += bird.velocity;
+
+    if (frame % 95 === 0) createPipe();
+
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        pipes[i].x -= gameSpeed;
+
+        if (bird.x + 8 < pipes[i].x + pipes[i].width &&
+            bird.x + bird.width - 8 > pipes[i].x &&
+            (bird.y + 8 < pipes[i].top || bird.y + bird.height - 8 > canvas.height - pipes[i].bottom)) {
+            endGame();
+        }
+
+        if (!pipes[i].passed && pipes[i].x + pipes[i].width < bird.x) {
+            score++;
+            pipes[i].passed = true;
+            scoreElement.innerText = score;
+        }
+        if (pipes[i].x + pipes[i].width < -80) pipes.splice(i, 1);
+    }
+
+    if (bird.y + bird.height > canvas.height || bird.y < 0) endGame();
+    frame++;
+}
+
+function endGame() {
+    isGameOver = true;
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('flappyHighScoreIndo', highScore);
+        highScoreElement.innerText = `HIGH SCORE: ${highScore}`;
+    }
+}
+
+function draw() {
+    ctx.fillStyle = "#70c5ce";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.drawImage(birdImg, bird.x, bird.y, bird.width, bird.height);
+
+    pipes.forEach(pipe => {
+        ctx.save();
+        ctx.translate(pipe.x + pipe.width/2, pipe.top/2);
+        ctx.scale(1, -1);
+        ctx.drawImage(pipe.topImg, -pipe.width/2, -pipe.top/2, pipe.width, pipe.top);
+        ctx.restore();
+        ctx.drawImage(pipe.botImg, pipe.x, canvas.height - pipe.bottom, pipe.width, pipe.bottom);
+    });
+
+    if (isGameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.font = "20px 'Press Start 2P'";
+        ctx.fillText("ADUH, SAKIT!", canvas.width / 2, canvas.height / 2);
+        ctx.font = "10px 'Press Start 2P'";
+        ctx.fillText("Tik om te herstarten", canvas.width / 2, canvas.height / 2 + 50);
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    if (!isGameOver && gameStarted) requestAnimationFrame(loop);
+}
+
+birdImg.onload = () => draw();
+</script>
+</body>
+</html>
